@@ -1,0 +1,259 @@
+---
+title: "graphs"
+output: pdf_document
+date: "2025-09-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# read infant and null full graph stats
+# Observed infant data
+df_infant <- read.csv("../../data/PanelC/RGB_graphs/graphs_infant_RGB_10pct.csv", na.strings = c("", "NA"))
+ # Geometric null
+df_G_null <- read.csv("../../data/PanelC/RGB_graphs/graphs_null_RGB_10pct.csv", na.strings = c("", "NA"))
+# Space-only null
+df_S_null <- read.csv("../../data/PanelC/RGB_graphs/chunkedK1_label_shuffling_graphs_null_RGB_10pct.csv", na.strings = c("", "NA"))
+# Space-Time null
+df_ST_null <- read.csv("../../data/PanelC/RGB_graphs/chunkedK6_label_shuffling_graphs_null_RGB_10pct.csv", na.strings = c("", "NA"))
+
+# read R1-R1 and O-O subgraph stats
+# partition by R1 or O nodes (node-induced)
+df_subgraph <- read.csv("../../data/PanelC/RGB_graphs/SUBgraphs_RGB_10pct_nodeInd_R1.csv", na.strings = c("", "NA"))
+df_OO_R1O <- read.csv("../../data/PanelC/RGB_graphs/SUBgraphs_RGB_10pct_nodeInd_O.csv", na.strings = c("", "NA"))
+
+# but that partition is not possible for R1-O, so we must partition by edges that have R1 and O as endpoints or R1 and R1 (edge-induced)
+# df_subgraph <- read.csv("../../data/PanelC/RGB_graphs/SUBgraphs_RGB_10pct_edgeInd_R1R1.csv", na.strings = c("", "NA"))
+# df_OO_R1O <- read.csv("../../data/PanelC/RGB_graphs/SUBgraphs_RGB_10pct_edgeInd_R1O.csv", na.strings = c("", "NA"))
+
+df_subgraph$node_type <- "R1-R1"
+df_OO_R1O$node_type <- "O-O"
+```
+
+```{r}
+sort_and_filter_complete <- function(...) {
+  dfs <- list(...)
+  dfs <- lapply(dfs, function(df) df[order(df$subj, df$category), , drop = FALSE])
+  keys <- lapply(dfs, function(df) paste(df$subj, df$category, sep = "\r"))
+  stopifnot(all(vapply(dfs[-1], function(df) {
+    identical(keys[[1]], paste(df$subj, df$category, sep = "\r"))
+  }, logical(1))))
+  keep <- Reduce(`&`, lapply(dfs, complete.cases))
+  lapply(dfs, function(df) df[keep, , drop = FALSE])
+}
+
+dfs_all <- sort_and_filter_complete(df_infant, df_G_null, df_S_null, df_ST_null)
+df_infant <- dfs_all[[1]]
+df_G_null <- dfs_all[[2]]
+df_S_null <- dfs_all[[3]]
+df_ST_null <- dfs_all[[4]]
+
+dfs_subgraph <- sort_and_filter_complete(df_subgraph, df_OO_R1O)
+df_subgraph <- dfs_subgraph[[1]]
+df_OO_R1O <- dfs_subgraph[[2]]
+
+df_infant$dataset <- "Infant"
+df_G_null$dataset <- "G-Null"
+df_S_null$dataset <- "S-Null"
+df_ST_null$dataset <- "ST-Null"
+
+df_subgraph$dataset <- "R1-R1"
+df_OO_R1O$dataset <- "O-O"
+
+df_all <- rbind(df_infant, df_G_null, df_S_null, df_ST_null)
+df_all$dataset <- factor(df_all$dataset, levels = c("G-Null", "S-Null", "ST-Null", "Infant"))
+
+df_subgraph <- rbind(df_subgraph, df_OO_R1O)
+df_subgraph$dataset <- factor(df_subgraph$dataset, levels = c("R1-R1", "O-O"))
+```
+
+```{r}
+cols_to_remove <- c("proportion_connected_nodes")
+
+df_all <- df_all %>% dplyr::select(-all_of(cols_to_remove))
+df_subgraph <- df_subgraph %>% dplyr::select(-all_of(cols_to_remove))
+```
+
+# normalize to shared scale for visualization
+```{r}
+features_to_plot <- c("overall_avg_connectivity") # options: "avg_degree" or "overall_avg_connectivity"
+OUT_NAME <- ifelse("avg_degree" %in% features_to_plot, "degree", "connectivity")
+
+name_map <- c(
+  "avg_degree" = "Avg Degree",
+  "overall_avg_connectivity" = "Connectivity"
+)
+
+# do infant and null full graphs
+# gather features into long form
+df_long_all <- df_all %>%
+  pivot_longer(
+    cols = -c(subj, category, dataset), # keep subj, category, dataset, melt the rest
+    names_to = "feature",
+    values_to = "value"
+  ) %>%
+  filter(feature %in% features_to_plot)
+
+# sum/mean across subjects per dataset × category × feature
+df_sum_all <- df_long_all %>%
+  group_by(category, dataset, feature) %>%
+  summarise(total_value = mean(value, na.rm = TRUE), .groups = "drop")
+
+# normalize within each feature × category
+df_norm_all <- df_sum_all %>%
+  group_by(category, feature) %>%
+  mutate(norm_value = total_value / max(total_value)) %>%
+  ungroup() %>%
+  mutate(feature = dplyr::recode(feature, 
+  "avg_degree" = "Avg Degree",
+  "overall_avg_connectivity" = "Connectivity"
+))
+
+df_sd_all <- df_long_all %>%
+  group_by(subj, category, feature) %>%
+  mutate(norm_value = value / max(value)) %>%
+  ungroup() %>%
+  group_by(dataset, feature) %>%
+  summarize(sd_ = sd(norm_value)) %>%
+  mutate(feature = dplyr::recode(feature, 
+  "avg_degree" = "Avg Degree",
+  "overall_avg_connectivity" = "Connectivity"
+))
+
+df_avg_norm_all <- df_norm_all %>%
+  group_by(dataset, feature) %>%
+  summarise(mean_norm_value = mean(norm_value, na.rm = TRUE), sd_norm_value = sd(norm_value, na.rm = TRUE), .groups = "drop")
+
+df_combined_all <- merge(df_avg_norm_all, df_sd_all, by = c("dataset", "feature"))
+
+######################################
+
+# do r1 O subgraphs
+# gather features into long form
+df_long_r1 <- df_subgraph %>%
+  pivot_longer(
+    cols = -c(subj, category, dataset, node_type), # keep subj, category, dataset, melt the rest
+    names_to = "feature",
+    values_to = "value"
+  ) %>%
+  filter(feature %in% features_to_plot)
+
+# sum/mean across subjects per dataset × category × feature
+df_sum_r1 <- df_long_r1 %>%
+  group_by(category, dataset, feature) %>%
+  summarise(total_value = mean(value, na.rm = TRUE), .groups = "drop")
+
+# normalize within each feature × category
+df_norm_r1 <- df_sum_r1 %>%
+  group_by(category, feature) %>%
+  mutate(norm_value = total_value / max(total_value)) %>%
+  ungroup() %>%
+  mutate(feature = dplyr::recode(feature, 
+  "avg_degree" = "Avg Degree",
+  "overall_avg_connectivity" = "Connectivity"
+))
+
+df_sd_r1 <- df_long_r1 %>%
+  group_by(subj, category, feature) %>%
+  mutate(norm_value = value / max(value)) %>%
+  ungroup() %>%
+  group_by(dataset, feature) %>%
+  summarize(sd_ = sd(norm_value)) %>%
+  mutate(feature = dplyr::recode(feature, 
+  "avg_degree" = "Avg Degree",
+  "overall_avg_connectivity" = "Connectivity"
+))
+
+df_avg_norm_r1 <- df_norm_r1 %>%
+  group_by(dataset, feature) %>%
+  summarise(mean_norm_value = mean(norm_value, na.rm = TRUE), sd_norm_value = sd(norm_value, na.rm = TRUE), .groups = "drop")
+
+df_combined_subgraph <- merge(df_avg_norm_r1, df_sd_r1, by = c("dataset", "feature"))
+```
+
+```{r}
+df_combined_all$dataset <- factor(df_combined_all$dataset, levels = c("G-Null", "S-Null", "ST-Null", "Infant"))
+df_combined_subgraph$dataset <- factor(df_combined_subgraph$dataset, levels = c("O-O", "R1-R1"))
+
+# print(df_combined_all)
+# print(df_combined_subgraph)
+```
+
+```{r}
+df_combined_both <- rbind(df_combined_all, df_combined_subgraph)
+# print(df_combined_both)
+```
+
+## plot
+```{r}
+library(RColorBrewer)
+p <- ggplot(df_combined_both, aes(x = feature, y = mean_norm_value, fill = dataset)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.82), width = 0.625, alpha = 1.) +
+  geom_errorbar(
+    aes(ymin = mean_norm_value - sd_, # sd_norm_value SD across cats or sd_ if corpus level
+        ymax = mean_norm_value + sd_),
+    width = 0.2,                           # horizontal width of error bars
+    position = position_dodge(width = 0.82) # matches bar dodging
+  ) +
+  theme_minimal() +
+  labs(y = NULL, x = NULL, fill = "Distribution") +
+  scale_fill_manual(values = c(
+    "Infant" = "#e5b9d6", 
+    
+    "G-Null" = "grey60",
+    "S-Null" = "grey72",
+    "ST-Null" = "grey85",
+    
+    "R1-R1" = "#fac4ab",
+    "O-O" = "#b9c7e6"
+      ) 
+    ) +
+  theme(
+    legend.position = "none",
+    axis.title.x = element_text(size = 28),
+    axis.title.y = element_text(size = 28),
+    axis.text.x  = element_text(size = 24),
+    axis.text.y  = element_text(size = 32),
+    legend.title = element_text(size = 16),
+    legend.text  = element_text(size = 14),
+    strip.text   = element_text(size = 16),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey92"),
+    panel.grid.minor.y = element_line(color = "grey95")
+) + 
+  scale_y_continuous(limits = c(0, 1.5),breaks = seq(0, 1.0, 0.25) )
+# ggsave(paste0(OUT_NAME, "_Fig2_final.svg"), plot = p, width = 9, height = 8, dpi=300, device = "svg")
+
+print(p)
+```
+## Stats
+```{r}
+library(lmerTest)
+library(emmeans)
+col <- "overall_avg_connectivity" # options: "avg_degree" or "overall_avg_connectivity" or "proportion_connected_nodes" (if not removed from the df above)
+df_all$dataset <- factor(df_all$dataset, levels = c("Infant", "G-Null", "S-Null", "ST-Null"))
+fmla <- as.formula(paste(col, "~ dataset + category + (1|subj)"))
+fit  <- lmerTest::lmer(fmla, data = df_all, na.action = na.omit)
+s <- summary(fit)
+```
+
+```{r}
+# Get all pairwise comparisons
+em_dataset <- emmeans(fit, ~ dataset)
+all_comparisons <- contrast(em_dataset, method = "pairwise", adjust = "holm")
+df_res <- as.data.frame(all_comparisons)
+df_all$dataset <- factor(df_all$dataset, levels = c("G-Null", "S-Null", "ST-Null", "Infant"))
+
+print(df_res)
+```
+
+```{r}
+
+```

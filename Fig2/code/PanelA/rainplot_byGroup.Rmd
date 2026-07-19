@@ -1,0 +1,236 @@
+---
+title: "Within-category histograms and barplots"
+output: pdf_document
+date: "2025-02-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## set up
+```{r}
+rm(list=ls())
+options(scipen = 9999)
+set.seed(1214)
+
+# load packages
+library(tidyverse)
+library(ggplot2)
+library(stringi)
+library(ggpubr)
+```
+
+
+## read in files
+```{r}
+setwd("../../data/PanelA/RGB_hist")
+
+# get files list
+files = list.files(pattern="*.csv")
+
+chosen_cats = c("bottle", "bowl", "chair", "cup", 
+                "door", "spoon", "table", "window")
+
+# subjects
+subjs = c("030FD", "031HW", "032SR", "033SE", "036MR", "037SM", "038RB", "039ED", "041EC",
+          "042MB", "043MP", "045NA", "046TE", "047MS")
+
+# Top to top comparisons 
+t2t_files = files[stri_startswith_fixed(files, "t2t") == TRUE]
+if (length(t2t_files) != 8) {
+  stop(paste("Expected 8 R1-R1 files, but found", length(t2t_files), "matching the pattern."))
+}
+
+t2t_comp_data = lapply(t2t_files, function(x) read.csv(x, header = FALSE, stringsAsFactors = FALSE)) 
+
+names(t2t_comp_data) = chosen_cats
+
+t2t_comp_data = lapply(t2t_comp_data, setNames, nm = c("obj", "subj", "comp_corr", "img1", "img2", "comp_type"))
+
+# Other to other comparisons
+o2o_files = files[stri_startswith_fixed(files, "o2o") == TRUE]
+if (length(o2o_files) != 8) {
+  stop(paste("Expected 8 O-O files, but found", length(t2t_files), "matching the pattern."))
+}
+
+o2o_comp_data = lapply(o2o_files, function(x) read.csv(x, header = FALSE, stringsAsFactors = FALSE)) 
+
+names(o2o_comp_data) = chosen_cats
+
+o2o_comp_data = lapply(o2o_comp_data, setNames, nm = c("obj", "subj", "comp_corr", "img1", "img2", "comp_type"))
+
+# Top to other comparisons
+t2o_files = files[stri_startswith_fixed(files, "t2o") == TRUE]
+if (length(t2o_files) != 8) {
+  stop(paste("Expected 8 R1-O files, but found", length(t2t_files), "matching the pattern."))
+}
+
+t2o_comp_data = lapply(t2o_files, function(x) read.csv(x, header = FALSE, stringsAsFactors = FALSE)) 
+
+names(t2o_comp_data) = chosen_cats
+
+t2o_comp_data = lapply(t2o_comp_data, setNames, nm = c("obj", "subj", "comp_corr", "img1", "img2", "comp_type"))
+```
+
+## parse data
+```{r}
+## the python output accidentally puts a blank space before the image names so take that out
+t2t_comp_data = lapply(t2t_comp_data, function(x) x %>%
+                         mutate(img1 = stri_trim_left(img1), img2 = stri_trim_left(img2), subj = stri_trim_left(subj),
+                                comp_type = stri_trim_left(comp_type)))
+
+o2o_comp_data = lapply(o2o_comp_data, function(x) x %>%
+                         mutate(img1 = stri_trim_left(img1), img2 = stri_trim_left(img2), subj = stri_trim_left(subj),
+                                comp_type = stri_trim_left(comp_type)))
+
+t2o_comp_data = lapply(t2o_comp_data, function(x) x %>%
+                         mutate(img1 = stri_trim_left(img1), img2 = stri_trim_left(img2), subj = stri_trim_left(subj),
+                                comp_type = stri_trim_left(comp_type)))
+
+## get index of top and other images for later use
+top_imgs = lapply(t2t_comp_data, function(x) unique(c(x$img1, x$img2)))
+
+other_imgs = lapply(o2o_comp_data, function(x) unique(c(x$img1, x$img2)))
+```
+
+```{r}
+#### custom histogram theme ####
+hist_theme <- function() {
+  theme(
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+    plot.subtitle = element_text(size = 14, hjust = 0.5),
+    axis.line = element_line(colour="black"),
+    axis.text = element_text(size = 14),
+    axis.title = element_text(face = "bold",size = 14),
+    panel.background = element_rect(fill = "white"),
+    legend.position = "none")
+}
+```
+
+```{r}
+#### combine all comparison types ####
+t2t_comp_data_combined = do.call(rbind, t2t_comp_data) 
+
+o2o_comp_data_combined = do.call(rbind, o2o_comp_data) 
+
+t2o_comp_data_combined = do.call(rbind, t2o_comp_data)
+
+t2t_o2o_t2o_comp_data_combined = rbind(t2t_comp_data_combined, o2o_comp_data_combined, t2o_comp_data_combined) %>% 
+  mutate(comp_type = factor(as.character(comp_type), levels = c("t2t", "t2o", "o2o"), ordered = TRUE))
+
+t2t_o2o_t2o_comp_data_combined = t2t_o2o_t2o_comp_data_combined %>% 
+  mutate(plot_feat = comp_corr) 
+```
+
+```{r}
+# drop duplicates if wanted (unordered pairs)
+print(dim(t2t_o2o_t2o_comp_data_combined))
+t2t_o2o_t2o_comp_data_combined <- t2t_o2o_t2o_comp_data_combined %>%
+  group_by(subj, comp_type) %>%
+  filter(!duplicated(cbind(pmin(img1, img2), pmax(img1, img2)))) %>%
+  ungroup()
+
+print(dim(t2t_o2o_t2o_comp_data_combined))
+```
+
+# Sort by amount of data
+```{r}
+t2t_o2o_t2o_comp_data_combined$subj <- factor(t2t_o2o_t2o_comp_data_combined$subj, levels = 
+                                 c('030FD',
+                                  '037SM',
+                                  '046TE',
+                                  '032SR',
+                                  '038RB',
+                                  '042MB',
+                                  '045NA',
+                                  '039ED',
+                                  '047MS',
+                                  '033SE',
+                                  '043MP',
+                                  '031HW',
+                                  '036MR',
+                                  '041EC'
+                                  )
+                                )
+```
+
+
+```{r}
+library(RColorBrewer)
+set2_colors <- brewer.pal(3, "Set2")
+
+# custom colors
+color_map <- c(
+  "t2t" = set2_colors[2], 
+  "o2o" = set2_colors[3],
+  "t2o" = set2_colors[1]  
+)
+
+#### put t2t and o2o and t2o comparisons on the same plot with a facet for each of the objects ####
+t2t_o2o_t2o_plot = ggplot(t2t_o2o_t2o_comp_data_combined, aes(y = plot_feat)) +
+  ## add half-violin from {ggdist} package
+  ggdist::stat_halfeye(aes(fill = comp_type),
+                       position = position_nudge(x = .05, y = 0),
+                       ## custom bandwidth
+                       adjust = .7,
+                       ## adjust height
+                       width = .8,
+                       ## move geom to the right
+                       justification = -.2,
+                       ## remove slab interval
+                       .width = 0,
+                       point_colour = NA,
+                       alpha = .5# 0.5 looks good; used 1. for adobe
+  ) +
+  geom_boxplot(aes(fill = comp_type, color = comp_type, x = .07),
+               #position = "dodge",
+               width = .12,
+               ## remove outliers
+               ## `outlier.shape = NA` works as well
+               alpha = 0.4
+  ) +
+  # facet_wrap(vars(obj), nrow = 2, ncol=4) +  # uncomment this for per-category or per-subj analysis
+  facet_wrap(vars(subj), nrow = 3, ncol=5) +
+  
+  theme_minimal() +
+  labs(title = NULL,
+       y = NULL, x = NULL) +
+  scale_fill_manual(values = color_map, #name = "Comparison Type",
+                    # labels = c("Rank 1-Rank 1", "Rank 1-Other", "Other-Other")
+                    ) +
+  scale_color_manual(values = color_map, #name = "Comparison Type",
+                     # labels = c("Rank 1-Rank 1", "Rank 1-Other", "Other-Other")
+                     ) +
+  scale_x_discrete(expand = expansion(mult = c(.1, 0))) +
+  scale_y_continuous(labels = prettyNum) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",  # Adjust X and Y as needed
+    axis.title.x = element_text(size = 22),
+    axis.title.y = element_text(size = 22),
+    # axis.text.x  = element_text(size = 32), # if doing combined
+    axis.text.x  = element_text(size = 24), # if doing by subj
+    axis.text.y  = element_text(size = 32), 
+    legend.title = element_text(size = 20),
+    legend.text  = element_text(size = 18),
+    strip.text   = element_text(size = 26),
+    axis.line = element_line(colour="grey60"),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank()
+    ) +
+  coord_flip(ylim = c(0,1))
+
+ggsave("rainplot_byGroup_bysubj.svg", plot = t2t_o2o_t2o_plot, width = 16, height = 8, dpi=300, device = "svg")
+t2t_o2o_t2o_plot
+# dev.off()
+```
+
+
+```{r}
+
+```
+
+
