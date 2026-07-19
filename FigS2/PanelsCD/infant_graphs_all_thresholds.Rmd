@@ -1,0 +1,226 @@
+---
+title: "graph_significance"
+output: pdf_document
+date: "2025-09-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# read infant and null full graph stats
+df_infant_05 <- read.csv("../../Fig2/data/PanelC/RGB_graphs/graphs_infant_RGB_05pct.csv", na.strings = c("", "NA")) 
+df_G_null_05 <- read.csv("../../Fig2/data/PanelC/RGB_graphs/graphs_null_RGB_05pct.csv", na.strings = c("", "NA"))
+df_S_null_05 <- read.csv("../../Fig2/data/PanelC/RGB_graphs/chunkedK1_label_shuffling_graphs_null_RGB_05pct.csv", na.strings = c("", "NA"))
+df_ST_null_05 <- read.csv("../../Fig2/data/PanelC/RGB_graphs/chunkedK6_label_shuffling_graphs_null_RGB_05pct.csv", na.strings = c("", "NA"))
+
+df_infant_10 <- read.csv("../../Fig2/data/PanelC/RGB_graphs/graphs_infant_RGB_10pct.csv", na.strings = c("", "NA")) 
+df_G_null_10 <- read.csv("../../Fig2/data/PanelC/RGB_graphs/graphs_null_RGB_10pct.csv", na.strings = c("", "NA"))
+df_S_null_10 <- read.csv("../../Fig2/data/PanelC/RGB_graphs/chunkedK1_label_shuffling_graphs_null_RGB_10pct.csv", na.strings = c("", "NA"))
+df_ST_null_10 <- read.csv("../../Fig2/data/PanelC/RGB_graphs/chunkedK6_label_shuffling_graphs_null_RGB_10pct.csv", na.strings = c("", "NA"))
+
+df_infant_20 <- read.csv("../../Fig2/data/PanelC/RGB_graphs/graphs_infant_RGB_20pct.csv", na.strings = c("", "NA")) 
+df_G_null_20 <- read.csv("../../Fig2/data/PanelC/RGB_graphs/graphs_null_RGB_20pct.csv", na.strings = c("", "NA"))
+df_S_null_20 <- read.csv("../../Fig2/data/PanelC/RGB_graphs/chunkedK1_label_shuffling_graphs_null_RGB_20pct.csv", na.strings = c("", "NA"))
+df_ST_null_20 <- read.csv("../../Fig2/data/PanelC/RGB_graphs/chunkedK6_label_shuffling_graphs_null_RGB_20pct.csv", na.strings = c("", "NA"))
+```
+
+```{r}
+
+sort_and_filter_complete <- function(...) {
+  dfs <- list(...)
+  dfs <- lapply(dfs, function(df) df[order(df$subj, df$category), , drop = FALSE])
+  keys <- lapply(dfs, function(df) paste(df$subj, df$category, sep = "\r"))
+  stopifnot(all(vapply(dfs[-1], function(df) {
+    identical(keys[[1]], paste(df$subj, df$category, sep = "\r"))
+  }, logical(1))))
+  keep <- Reduce(`&`, lapply(dfs, complete.cases))
+  lapply(dfs, function(df) df[keep, , drop = FALSE])
+}
+
+dfs_05 <- sort_and_filter_complete(df_infant_05, df_G_null_05, df_S_null_05, df_ST_null_05)
+df_infant_05 <- dfs_05[[1]]
+df_G_null_05 <- dfs_05[[2]]
+df_S_null_05 <- dfs_05[[3]]
+df_ST_null_05 <- dfs_05[[4]]
+
+dfs_10 <- sort_and_filter_complete(df_infant_10, df_G_null_10, df_S_null_10, df_ST_null_10)
+df_infant_10 <- dfs_10[[1]]
+df_G_null_10 <- dfs_10[[2]]
+df_S_null_10 <- dfs_10[[3]]
+df_ST_null_10 <- dfs_10[[4]]
+
+dfs_20 <- sort_and_filter_complete(df_infant_20, df_G_null_20, df_S_null_20, df_ST_null_20)
+df_infant_20 <- dfs_20[[1]]
+df_G_null_20 <- dfs_20[[2]]
+df_S_null_20 <- dfs_20[[3]]
+df_ST_null_20 <- dfs_20[[4]]
+
+# extremely inneficient :)
+df_infant_05$dataset <- "Infant"
+df_G_null_05$dataset <- "G-Null"
+df_S_null_05$dataset <- "S-Null"
+df_ST_null_05$dataset <- "ST-Null"
+
+df_infant_05$pct <- "05"
+df_G_null_05$pct <- "05"
+df_S_null_05$pct <- "05"
+df_ST_null_05$pct <- "05"
+
+df_infant_10$dataset <- "Infant"
+df_G_null_10$dataset <- "G-Null"
+df_S_null_10$dataset <- "S-Null"
+df_ST_null_10$dataset <- "ST-Null"
+
+df_infant_10$pct <- "10"
+df_G_null_10$pct <- "10"
+df_S_null_10$pct <- "10"
+df_ST_null_10$pct <- "10"
+
+df_infant_20$dataset <- "Infant"
+df_G_null_20$dataset <- "G-Null"
+df_S_null_20$dataset <- "S-Null"
+df_ST_null_20$dataset <- "ST-Null"
+
+df_infant_20$pct <- "20"
+df_G_null_20$pct <- "20"
+df_S_null_20$pct <- "20"
+df_ST_null_20$pct <- "20"
+
+df_all <- rbind(df_infant_05, df_G_null_05, df_S_null_05, df_ST_null_05, df_infant_10, df_G_null_10, df_S_null_10, df_ST_null_10, df_infant_20, df_G_null_20, df_S_null_20, df_ST_null_20)
+df_all$dataset <- factor(df_all$dataset, levels = c("G-Null", "S-Null", "ST-Null", "Infant"))
+df_all$pct <- factor(df_all$pct, levels = c("05", "10", "20"))
+```
+
+```{r}
+cols_to_remove <- c("proportion_connected_nodes")
+
+df_infant_05 <- df_infant_05 %>% dplyr::select(-all_of(cols_to_remove))
+df_G_null_05 <- df_G_null_05 %>% dplyr::select(-all_of(cols_to_remove))
+df_S_null_05 <- df_S_null_05 %>% dplyr::select(-all_of(cols_to_remove))
+df_ST_null_05 <- df_ST_null_05 %>% dplyr::select(-all_of(cols_to_remove))
+
+df_infant_10 <- df_infant_10 %>% dplyr::select(-all_of(cols_to_remove))
+df_G_null_10 <- df_G_null_10 %>% dplyr::select(-all_of(cols_to_remove))
+df_S_null_10 <- df_S_null_10 %>% dplyr::select(-all_of(cols_to_remove))
+df_ST_null_10 <- df_ST_null_10 %>% dplyr::select(-all_of(cols_to_remove))
+
+df_infant_20 <- df_infant_20 %>% dplyr::select(-all_of(cols_to_remove))
+df_G_null_20 <- df_G_null_20 %>% dplyr::select(-all_of(cols_to_remove))
+df_S_null_20 <- df_S_null_20 %>% dplyr::select(-all_of(cols_to_remove))
+df_ST_null_20 <- df_ST_null_20 %>% dplyr::select(-all_of(cols_to_remove))
+```
+
+
+# plots
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+features_to_plot <- c("overall_avg_connectivity") #"avg_degree"   "overall_avg_connectivity"
+OUT_NAME <- ifelse("avg_degree" %in% features_to_plot, "degree", "connectivity")
+
+name_map <- c(
+  "avg_degree" = "Avg Degree",
+  "overall_avg_connectivity" = "Connectivity"
+)
+
+print(df_all)
+
+# do infant and null full graphs
+# gather features into long form
+df_long_all <- df_all %>%
+  pivot_longer(
+    cols = -c(subj, category, dataset, pct), # keep subj, category, dataset, melt the rest
+    names_to = "feature",
+    values_to = "value"
+  ) %>%
+  filter(feature %in% features_to_plot)
+
+# sum across subjects per dataset × category × feature
+df_sum_all <- df_long_all %>%
+  group_by(pct, category, dataset, feature) %>%
+  summarise(total_value = mean(value, na.rm = TRUE), .groups = "drop")
+
+# normalize within each feature × category
+df_norm_all <- df_sum_all %>%
+  group_by(pct, category, feature) %>%
+  # mutate(norm_value = total_value / max(total_value)) %>% # if using normalized
+  mutate(norm_value = total_value) %>%
+  ungroup() %>%
+  mutate(feature = dplyr::recode(feature, !!!name_map))  # apply shorter names
+
+df_sd_all <- df_long_all %>%
+  group_by(pct, subj, category, feature) %>%
+  # mutate(norm_value = value / max(value)) %>%
+  mutate(norm_value = value) %>%
+  ungroup() %>%
+  group_by(pct, dataset, feature) %>%
+  summarize(sd_ = sd(norm_value), se_ = sd(norm_value) / sqrt(length(norm_value))) %>%
+  mutate(feature = dplyr::recode(feature, !!!name_map))  # apply shorter names
+
+df_avg_norm_all <- df_norm_all %>%
+  group_by(pct, dataset, feature) %>%
+  summarise(mean_norm_value = mean(norm_value, na.rm = TRUE), sd_norm_value = sd(norm_value, na.rm = TRUE), .groups = "drop")
+
+df_combined_all <- merge(df_avg_norm_all, df_sd_all, by = c("pct", "dataset", "feature"))
+```
+
+```{r}
+df_combined_all$dataset <- factor(df_combined_all$dataset, levels = c("G-Null", "S-Null", "ST-Null", "Infant"))
+df_combined_all$pct <- factor(df_combined_all$pct, levels = c("05", "10", "20"))
+```
+
+```{r}
+library(RColorBrewer)
+
+my_colors <- rep(c("grey60", "grey72", "grey85", "#e5b9d6"), length.out = 12)
+
+# plot: Infant vs Null, averaged across categories
+p <- ggplot(df_combined_all, aes(x = feature, y = mean_norm_value, fill = interaction(dataset, pct))) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.82), width = 0.625, alpha = 1.) +
+  geom_errorbar(
+    aes(ymin = mean_norm_value - se_, # sd_norm_value SD across cats or sd_ if corpus level
+        ymax = mean_norm_value + se_),
+    width = 0.2,                           # horizontal width of error bars
+    position = position_dodge(width = 0.82), # matches bar dodging
+    alpha = 1
+  ) +
+  facet_wrap(~ pct) +
+  theme_minimal() +
+  # labs(y = "Normalized value", x = NULL) +
+  labs(y = "Absolute value", x = NULL) +
+  scale_fill_manual(values = my_colors) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size = 28, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 24),
+    axis.title.y = element_text(size = 24),
+    axis.text.x  = element_blank(),
+    axis.text.y  = element_text(size = 32),
+    legend.title = element_text(size = 16),
+    legend.text  = element_text(size = 14),
+    strip.text   = element_blank(),
+    panel.spacing.x = unit(-2, "lines"),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey92"),
+    panel.grid.minor.y = element_line(color = "grey95")
+) + 
+  # scale_y_continuous(limits = c(0, 1.05),breaks = seq(0, 1.0, 0.25) ) # if using normalized values
+  scale_y_continuous(limits = c(0, 26.5), breaks = seq(0, 25, 5) ) # if using absolute values
+  ggsave(paste0(OUT_NAME, "_all_thres_RGB_abs_final.svg"), plot = p, width = 15, height = 7, dpi=300, device = "svg")
+
+print(p)
+```
+
+
+```{r}
+
+```

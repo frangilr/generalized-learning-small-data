@@ -1,0 +1,155 @@
+---
+title: "Object frequency per frame"
+output: pdf_document
+date: "2025-07-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Set up
+```{r}
+#### general set up ####
+rm(list=ls()) # clear environment
+options(scipen = 999)
+options(digits = 10)
+set.seed(1214)
+
+safe_colorblind_palette <- c("#88CCEE", "#CC6677", "#DDCC77", "#117733", "#332288", "#AA4499", 
+                             "#44AA99", "#999933", "#882255", "#661100", "#6699CC", "#888888")
+
+library(ggplot2)
+library(gridExtra)
+library(reshape2)
+library(forcats)
+library(ggpubr)
+library(dplyr)
+library(ggExtra)
+library(ggforce)
+library(tidyverse)
+library(stringr)
+library(data.table)
+library(MonoPoly)
+library(ggalt)
+library(dgof)
+library(extraDistr)
+library(Matching)
+library(boot)
+library(gt)
+library(wesanderson)
+
+subjs = c("030FD", "031HW", "032SR", "033SE", "036MR", "037SM", "038RB", "039ED", "041EC",
+          "042MB", "043MP", "045NA", "046TE", "047MS")
+
+#### chosen cats for analysis ####
+chosen_cats = c("bottle", "bowl", "chair", "cup", 
+                "door", "spoon", "table", "window")
+
+#### custom theme ####
+my_theme <- function() {
+  theme(
+    legend.position = "none",  # Adjust X and Y as needed
+    axis.title.x = element_text(size = 24),
+    axis.title.y = element_text(size = 24),
+    axis.text.x  = element_text(size = 24),
+    axis.text.y  = element_text(size = 24),
+    legend.title = element_text(size = 22),
+    legend.text  = element_text(size = 20),
+    strip.text   = element_text(size = 16),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey92"),
+    panel.grid.minor.y = element_line(color = "grey95")
+    )
+}
+```
+
+## Read data
+```{r}
+# set working directory
+setwd("../../Fig1/data")
+
+#### read in data and find first ranked items by subj/obj ####
+### read in data into list ###
+origdata <- vector('list')
+
+for(o in 1:length(chosen_cats)){
+  obj = chosen_cats[o]
+  
+  infile = paste0(obj,"_multisubjs_longdata.csv")
+  data_file = read.csv(infile, stringsAsFactors = FALSE)
+  data_file$obj_id = as.factor(data_file$obj_id)
+  
+  colnames(data_file) = c("frame_id","MT","subj","obj","obj_num","obj_pos","obj_id")
+  
+  origdata[[o]] = data_file
+}
+
+names(origdata) = chosen_cats
+```
+
+## All objs
+```{r}
+# real dist
+#### Objects per frames as proportions combined across subjects ####
+
+obj_perFrame_combSubjs = function(mylist){
+  curr_data = `[`(mylist)
+  
+  curr_obj = curr_data$obj[1] ## silly way of adding the object name to the tibble
+  
+  objs_frameProp = curr_data %>% 
+    distinct(frame_id, .keep_all = TRUE) %>% 
+    filter(obj_num != "x") %>%  
+    mutate(obj_num = factor(obj_num, levels = 1:4), obj = factor(obj, levels = chosen_cats)) %>% 
+    group_by(obj_num) %>% 
+    summarise(n = n()) %>% 
+    mutate(denom = sum(n), obj = curr_obj)
+}
+
+perFrame_combSubjs_list = lapply(origdata, obj_perFrame_combSubjs)
+
+perFrame_combSubjs_data = do.call(rbind, perFrame_combSubjs_list) %>% 
+  mutate(obj = as.factor(obj)) %>% 
+  group_by(obj, obj_num) 
+
+## use average across cats for gray bar
+perFrame_combSubjs_data_avg = perFrame_combSubjs_data %>% 
+  ungroup() %>% 
+  group_by(obj_num) %>% 
+  summarise(avg_prop = mean(n/denom), sd_prop = sd(n/denom))
+
+types_perframe_plot = ggplot() +
+  geom_col(data = perFrame_combSubjs_data_avg, alpha=1.,
+           aes(x = obj_num, y = avg_prop),
+           fill = "lightgray") +
+  geom_jitter(inherit.aes = FALSE, data = perFrame_combSubjs_data, 
+              aes(x = obj_num, y = n/denom, color = obj), 
+              width = 0.1, height = 0, size = 5) +
+  guides(color = guide_legend(title="Objects")) +
+  scale_y_continuous(limits = c(0, 1)) +
+  scale_x_discrete(labels = c("1", "2", "3", "4+"), drop = FALSE) +
+  scale_color_manual(values = safe_colorblind_palette) +
+  labs(title = NULL,
+       y = NULL, x = NULL) +
+  # my_theme() +
+  theme_minimal() +
+  theme(
+    legend.position = "none",  # Adjust X and Y as needed
+    axis.title.x = element_text(size = 24),
+    axis.title.y = element_text(size = 24),
+    axis.text.x  = element_text(size = 24),
+    axis.text.y  = element_text(size = 24),
+    legend.title = element_text(size = 22),
+    legend.text  = element_text(size = 20),
+    strip.text   = element_text(size = 16),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey92"),
+    panel.grid.minor.y = element_line(color = "grey95")
+    )
+# ggsave("obj_perframe.svg", plot = types_perframe_plot, width = 9, height = 7, dpi=300, device = "svg")
+types_perframe_plot
+# dev.off()
+```

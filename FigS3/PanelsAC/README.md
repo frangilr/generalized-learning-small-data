@@ -1,0 +1,1 @@
+This code is the same as `Fig2/code/PanelA/rainplot_byGroup.Rmd` and thus the folder is intentionally empty.

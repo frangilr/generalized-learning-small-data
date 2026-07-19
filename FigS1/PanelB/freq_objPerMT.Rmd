@@ -1,0 +1,182 @@
+---
+title: "Object frequency per mealtime"
+output: pdf_document
+date: "2025-07-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#### general set up ####
+rm(list=ls()) # clear environment
+options(scipen = 999)
+options(digits = 10)
+set.seed(1214)
+#RNGkind(sample.kind = "default")
+
+safe_colorblind_palette <- c("#88CCEE", "#CC6677", "#DDCC77", "#117733", "#332288", "#AA4499", 
+                             "#44AA99", "#999933", "#882255", "#661100", "#6699CC", "#888888")
+
+library(ggplot2)
+library(gridExtra)
+library(reshape2)
+library(forcats)
+library(ggpubr)
+library(dplyr)
+library(ggExtra)
+library(ggforce)
+library(tidyverse)
+library(stringr)
+library(data.table)
+library(MonoPoly)
+library(ggalt)
+library(dgof)
+library(extraDistr)
+library(Matching)
+library(boot)
+library(gt)
+library(wesanderson)
+
+subjs = c("030FD", "031HW", "032SR", "033SE", "036MR", "037SM", "038RB", "039ED", "041EC",
+          "042MB", "043MP", "045NA", "046TE", "047MS")
+
+#### chosen cats for analysis ####
+chosen_cats = c("bottle", "bowl", "chair", "cup", 
+                "door", "spoon", "table", "window")
+
+#### custom theme ####
+my_theme <- function() {
+  theme(
+    legend.position = "none",  # Adjust X and Y as needed
+    axis.title.x = element_text(size = 24),
+    axis.title.y = element_text(size = 24),
+    axis.text.x  = element_text(size = 24),
+    axis.text.y  = element_text(size = 24),
+    legend.title = element_text(size = 22),
+    legend.text  = element_text(size = 20),
+    strip.text   = element_text(size = 16),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey92"),
+    panel.grid.minor.y = element_line(color = "grey95")
+    )
+}
+```
+
+
+```{r}
+# set working directory
+setwd("../../Fig1/data")
+
+#### read in data and find first ranked items by subj/obj ####
+### read in data into list ###
+origdata <- vector('list')
+subdata <- vector('list')
+
+for(o in 1:length(chosen_cats)){
+  obj = chosen_cats[o]
+  
+  infile = paste0(obj,"_multisubjs_longdata.csv")
+  data_file = read.csv(infile, stringsAsFactors = FALSE)
+  data_file$obj_id = as.factor(data_file$obj_id)
+  
+  colnames(data_file) = c("frame_id","MT","subj","obj","obj_num","obj_pos","obj_id")
+  
+  origdata[[o]] = data_file
+  
+  ## get only the rows that have object ids in them, so remove the 4+ and x and exclude any unused position rows
+  sub_file = data_file %>% 
+    filter(obj_num < 4 | obj_num != "x") %>% 
+    droplevels(exclude = "") %>% 
+    na.omit()
+  
+  subdata[[o]] = sub_file
+}
+
+names(origdata) = chosen_cats
+names(subdata) = chosen_cats
+```
+
+```{r}
+#### types and tokens per mealtime ####
+types_perMT_all = vector('list')
+tokens_perMT_all = vector('list')
+
+for(o in 1:length(chosen_cats)){
+  tt_data = subdata[[o]]
+
+  ## find the unique ids and frequency of the ids for each mealtime
+  # first summarize the number of frames each id (for each MT) was in
+  # then tally frequency
+  # then combine the subj and obj ids
+  
+  # to obtain ranks
+  tt_id_freqs = tt_data %>% 
+    group_by(MT, subj, obj_id) %>%
+    summarise(tokens = n()) 
+  
+  # number of unique obj ids per mt
+  types_perMT = tt_data %>%
+    group_by(MT, subj) %>%
+    summarise(types = n_distinct(obj_id))
+  
+  types_perMT_all[[o]] = types_perMT
+  tokens_perMT = tt_id_freqs %>% 
+    group_by(MT, subj) %>% 
+    # mutate(sum = sum(tokens)) %>%
+    arrange(MT, subj, desc(tokens)) %>% 
+    mutate(rank = row_number()) %>%
+    ungroup() %>%
+    group_by(rank) %>%
+    summarise(tokens_rank = sum(tokens)) %>%
+    ungroup() %>%
+    mutate(total_rank = sum(tokens_rank), prop_rank = tokens_rank / sum(tokens_rank))
+  
+  tokens_perMT_all[[o]] = tokens_perMT
+  
+}
+names(types_perMT_all) = chosen_cats
+names(tokens_perMT_all) = chosen_cats
+```
+
+```{r}
+df_types_perMT_all <- do.call(
+  rbind,
+  Map(function(df, nm) {
+    df$obj <- nm
+    df
+  }, tokens_perMT_all, names(tokens_perMT_all))
+)
+```
+
+## rank freq within mt all objs
+```{r}
+# real dist
+#### one "histogram" for types per MT ####
+
+# using average to make the gray bars (objects are units of analysis)
+ df_types_perMT_all_avg = df_types_perMT_all %>%
+   group_by(rank) %>%
+   summarise(avg_prop = mean(prop_rank), sd_prop = sd(prop_rank))
+
+types_perMT_plot = ggplot() +
+  geom_col(data = df_types_perMT_all_avg, aes(x = rank, y = avg_prop), fill = "lightgray") +
+  geom_jitter( inherit.aes = FALSE, data = df_types_perMT_all, 
+               aes(x = rank, y = prop_rank, color = obj),
+               width = .15, height = 0, size = 3.25) +
+  labs(title = NULL, subtitle = NULL,
+       y = NULL, x = NULL) +
+  guides(color = guide_legend(title="Objects")) +
+  scale_y_continuous(limits = c(0,1)) +
+  scale_x_continuous(breaks = seq(from = 1, to = 16, by = 1), limits = c(.5, 16.5)) +
+
+  scale_color_manual(values = safe_colorblind_palette[c(1:8)], drop = FALSE) +
+  theme_minimal() +
+  my_theme()
+
+ # ggsave("rankFreq_withinMT.svg", plot = types_perMT_plot, width = 9, height = 7, dpi=300, device = "svg")
+types_perMT_plot
+# dev.off()
+```

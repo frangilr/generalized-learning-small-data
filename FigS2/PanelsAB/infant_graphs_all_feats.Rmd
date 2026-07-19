@@ -1,0 +1,266 @@
+---
+title: "graph_significance"
+output: pdf_document
+date: "2025-09-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# read infant and null full graph stats
+
+df_infant_RGB <- read.csv("../../Fig2/data/PanelC/RGB_graphs/graphs_infant_RGB_10pct.csv", na.strings = c("", "NA")) 
+df_G_null_RGB <- read.csv("../../Fig2/data/PanelC/RGB_graphs/graphs_null_RGB_10pct.csv", na.strings = c("", "NA"))
+df_S_null_RGB <- read.csv("../../Fig2/data/PanelC/RGB_graphs/chunkedK1_label_shuffling_graphs_null_RGB_10pct.csv", na.strings = c("", "NA"))
+df_ST_null_RGB <- read.csv("../../Fig2/data/PanelC/RGB_graphs/chunkedK6_label_shuffling_graphs_null_RGB_10pct.csv", na.strings = c("", "NA"))
+
+df_infant_GIST <- read.csv("../../Fig2/data/PanelC/GIST_cosSim_graphs/graphs_infant_GIST_cosSim_10pct.csv", na.strings = c("", "NA"))
+df_G_null_GIST <- read.csv("../../Fig2/data/PanelC/GIST_cosSim_graphs/graphs_null_GIST_cosSim_10pct.csv", na.strings = c("", "NA"))
+df_S_null_GIST <- read.csv("../../Fig2/data/PanelC/GIST_cosSim_graphs/chunkedK1_label_shuffling_graphs_null_GIST_cosSim_10pct.csv", na.strings = c("", "NA"))
+df_ST_null_GIST <- read.csv("../../Fig2/data/PanelC/GIST_cosSim_graphs/chunkedK6_label_shuffling_graphs_null_GIST_cosSim_10pct.csv", na.strings = c("", "NA"))
+
+df_infant_PE <- read.csv("../../Fig2/data/PanelC/PE_graphs/graphs_infant_PE_10pct.csv", na.strings = c("", "NA"))
+df_G_null_PE <- read.csv("../../Fig2/data/PanelC/PE_graphs/graphs_null_PE_10pct.csv", na.strings = c("", "NA"))
+df_S_null_PE <- read.csv("../../Fig2/data/PanelC/PE_graphs/chunkedK1_label_shuffling_graphs_null_PE_10pct.csv", na.strings = c("", "NA"))
+df_ST_null_PE <- read.csv("../../Fig2/data/PanelC/PE_graphs/chunkedK6_label_shuffling_graphs_null_PE_10pct.csv", na.strings = c("", "NA"))
+
+df_infant_Clip <- read.csv("../../Fig2/data/PanelC/Clip_graphs/graphs_infant_Clip_10pct.csv", na.strings = c("", "NA"))
+df_G_null_Clip <- read.csv("../../Fig2/data/PanelC/Clip_graphs/graphs_null_Clip_10pct.csv", na.strings = c("", "NA"))
+df_S_null_Clip <- read.csv("../../Fig2/data/PanelC/Clip_graphs/chunkedK1_label_shuffling_graphs_null_Clip_10pct.csv", na.strings = c("", "NA"))
+df_ST_null_Clip <- read.csv("../../Fig2/data/PanelC/Clip_graphs/chunkedK6_label_shuffling_graphs_null_Clip_10pct.csv", na.strings = c("", "NA"))
+```
+
+```{r}
+sort_and_filter_complete <- function(...) {
+  dfs <- list(...)
+  dfs <- lapply(dfs, function(df) df[order(df$subj, df$category), , drop = FALSE])
+  keys <- lapply(dfs, function(df) paste(df$subj, df$category, sep = "\r"))
+  stopifnot(all(vapply(dfs[-1], function(df) {
+    identical(keys[[1]], paste(df$subj, df$category, sep = "\r"))
+  }, logical(1))))
+  keep <- Reduce(`&`, lapply(dfs, complete.cases))
+  lapply(dfs, function(df) df[keep, , drop = FALSE])
+}
+
+dfs_RGB <- sort_and_filter_complete(df_infant_RGB, df_G_null_RGB, df_S_null_RGB, df_ST_null_RGB)
+df_infant_RGB <- dfs_RGB[[1]]
+df_G_null_RGB <- dfs_RGB[[2]]
+df_S_null_RGB <- dfs_RGB[[3]]
+df_ST_null_RGB <- dfs_RGB[[4]]
+
+dfs_GIST <- sort_and_filter_complete(df_infant_GIST, df_G_null_GIST, df_S_null_GIST, df_ST_null_GIST)
+df_infant_GIST <- dfs_GIST[[1]]
+df_G_null_GIST <- dfs_GIST[[2]]
+df_S_null_GIST <- dfs_GIST[[3]]
+df_ST_null_GIST <- dfs_GIST[[4]]
+
+dfs_PE <- sort_and_filter_complete(df_infant_PE, df_G_null_PE, df_S_null_PE, df_ST_null_PE)
+df_infant_PE <- dfs_PE[[1]]
+df_G_null_PE <- dfs_PE[[2]]
+df_S_null_PE <- dfs_PE[[3]]
+df_ST_null_PE <- dfs_PE[[4]]
+
+dfs_Clip <- sort_and_filter_complete(df_infant_Clip, df_G_null_Clip, df_S_null_Clip, df_ST_null_Clip)
+df_infant_Clip <- dfs_Clip[[1]]
+df_G_null_Clip <- dfs_Clip[[2]]
+df_S_null_Clip <- dfs_Clip[[3]]
+df_ST_null_Clip <- dfs_Clip[[4]]
+
+# extremely inneficient :)
+df_infant_RGB$dataset <- "Infant"
+df_G_null_RGB$dataset <- "G-Null"
+df_S_null_RGB$dataset <- "S-Null"
+df_ST_null_RGB$dataset <- "ST-Null"
+
+df_infant_RGB$visual_feat <- "RGB"
+df_G_null_RGB$visual_feat <- "RGB"
+df_S_null_RGB$visual_feat <- "RGB"
+df_ST_null_RGB$visual_feat <- "RGB"
+
+df_infant_GIST$dataset <- "Infant"
+df_G_null_GIST$dataset <- "G-Null"
+df_S_null_GIST$dataset <- "S-Null"
+df_ST_null_GIST$dataset <- "ST-Null"
+
+df_infant_GIST$visual_feat <- "GIST"
+df_G_null_GIST$visual_feat <- "GIST"
+df_S_null_GIST$visual_feat <- "GIST"
+df_ST_null_GIST$visual_feat <- "GIST"
+
+df_infant_PE$dataset <- "Infant"
+df_G_null_PE$dataset <- "G-Null"
+df_S_null_PE$dataset <- "S-Null"
+df_ST_null_PE$dataset <- "ST-Null"
+
+df_infant_PE$visual_feat <- "PE-Spatial"
+df_G_null_PE$visual_feat <- "PE-Spatial"
+df_S_null_PE$visual_feat <- "PE-Spatial"
+df_ST_null_PE$visual_feat <- "PE-Spatial"
+
+df_infant_Clip$dataset <- "Infant"
+df_G_null_Clip$dataset <- "G-Null"
+df_S_null_Clip$dataset <- "S-Null"
+df_ST_null_Clip$dataset <- "ST-Null"
+
+df_infant_Clip$visual_feat <- "CLIP"
+df_G_null_Clip$visual_feat <- "CLIP"
+df_S_null_Clip$visual_feat <- "CLIP"
+df_ST_null_Clip$visual_feat <- "CLIP"
+
+df_all <- rbind(
+            df_infant_RGB, df_G_null_RGB, df_S_null_RGB, df_ST_null_RGB, 
+            df_infant_GIST, df_G_null_GIST, df_S_null_GIST, df_ST_null_GIST, 
+            df_infant_PE, df_G_null_PE, df_S_null_PE, df_ST_null_PE,
+            df_infant_Clip, df_G_null_Clip, df_S_null_Clip, df_ST_null_Clip
+            )
+df_all$dataset <- factor(df_all$dataset, levels = c("G-Null", "S-Null", "ST-Null", "Infant"))
+df_all$visual_feat <- factor(df_all$visual_feat, levels = c("RGB", "GIST", "PE-Spatial", "CLIP"))
+```
+
+
+```{r}
+cols_to_remove <- c("proportion_connected_nodes")
+
+df_infant_RGB <- df_infant_RGB %>% dplyr::select(-all_of(cols_to_remove))
+df_G_null_RGB <- df_G_null_RGB %>% dplyr::select(-all_of(cols_to_remove))
+df_S_null_RGB <- df_S_null_RGB %>% dplyr::select(-all_of(cols_to_remove))
+df_ST_null_RGB <- df_ST_null_RGB %>% dplyr::select(-all_of(cols_to_remove))
+
+df_infant_GIST <- df_infant_GIST %>% dplyr::select(-all_of(cols_to_remove))
+df_G_null_GIST <- df_G_null_GIST %>% dplyr::select(-all_of(cols_to_remove))
+df_S_null_GIST <- df_S_null_GIST %>% dplyr::select(-all_of(cols_to_remove))
+df_ST_null_GIST <- df_ST_null_GIST %>% dplyr::select(-all_of(cols_to_remove))
+
+df_infant_PE <- df_infant_PE %>% dplyr::select(-all_of(cols_to_remove))
+df_G_null_PE <- df_G_null_PE %>% dplyr::select(-all_of(cols_to_remove))
+df_S_null_PE <- df_S_null_PE %>% dplyr::select(-all_of(cols_to_remove))
+df_ST_null_PE <- df_ST_null_PE %>% dplyr::select(-all_of(cols_to_remove))
+
+df_infant_Clip <- df_infant_Clip %>% dplyr::select(-all_of(cols_to_remove))
+df_G_null_Clip <- df_G_null_Clip %>% dplyr::select(-all_of(cols_to_remove))
+df_S_null_Clip <- df_S_null_Clip %>% dplyr::select(-all_of(cols_to_remove))
+df_ST_null_Clip <- df_ST_null_Clip %>% dplyr::select(-all_of(cols_to_remove))
+```
+
+# plots
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+features_to_plot <- c("overall_avg_connectivity", "avg_degree") #"avg_degree"   "overall_avg_connectivity"
+
+name_map <- c(
+  "avg_degree" = "Avg Degree",
+  "overall_avg_connectivity" = "Connectivity"
+)
+
+# do infant and null full graphs
+# gather features into long form
+df_long_all <- df_all %>%
+  pivot_longer(
+    cols = -c(subj, category, dataset, visual_feat), # keep subj, category, dataset, melt the rest
+    names_to = "feature",
+    values_to = "value"
+  ) %>%
+  filter(feature %in% features_to_plot)
+
+# average across categories, per subj + dataset + feature
+# df_avg_all <- df_long_all %>%
+  # group_by(subj, dataset, feature) %>%
+  # summarise(mean_value = mean(value, na.rm = TRUE), .groups = "drop")
+
+# sum across subjects per dataset × category × feature
+df_sum_all <- df_long_all %>%
+  group_by(visual_feat, category, dataset, feature) %>%
+  summarise(total_value = mean(value, na.rm = TRUE), .groups = "drop")
+
+# normalize within each feature × category
+df_norm_all <- df_sum_all %>%
+  group_by(visual_feat, category, feature) %>%
+  # mutate(norm_value = total_value / max(total_value)) %>%
+  mutate(norm_value = total_value) %>%
+  ungroup() %>%
+  mutate(feature = recode(feature, !!!name_map))  # apply shorter names
+
+df_sd_all <- df_long_all %>%
+  group_by(visual_feat, subj, category, feature) %>%
+  # mutate(norm_value = value / max(value)) %>%
+  mutate(norm_value = value) %>%
+  ungroup() %>%
+  group_by(visual_feat, dataset, feature) %>%
+  summarize(sd_ = sd(norm_value), se_ = sd(norm_value) / sqrt(length(norm_value))) %>%
+  ungroup() %>%
+  mutate(feature = recode(feature, !!!name_map))  # apply shorter names
+
+df_avg_norm_all <- df_norm_all %>%
+  group_by(visual_feat, dataset, feature) %>%
+  summarise(mean_norm_value = mean(norm_value, na.rm = TRUE), sd_norm_value = sd(norm_value, na.rm = TRUE), .groups = "drop")
+
+df_combined_all <- merge(df_avg_norm_all, df_sd_all, by = c("visual_feat", "dataset", "feature"))
+```
+
+```{r}
+df_combined_all$dataset <- factor(df_combined_all$dataset, levels = c("G-Null", "S-Null","ST-Null", "Infant"))
+df_combined_all$visual_feat <- factor(df_combined_all$visual_feat, levels = c("RGB", "GIST", "PE-Spatial", "CLIP"))
+```
+
+```{r}
+library(RColorBrewer)
+
+# Get the full 12 colors from the Paired palette
+full_palette <- brewer.pal(12, "Set2")
+
+# original R palette
+# my_colors <- rep(c(full_palette[7], full_palette[6], full_palette[4]), length.out = 12)
+# dimmer versions
+# my_colors <- rep(c("#e5c4ab", "#f5d993", "#e5b9d6"), length.out = 12)
+my_colors <- rep(c("grey60", "grey72", "grey85", "#e5b9d6"), length.out = 32)
+
+# plot: Infant vs Null, averaged across categories
+p <- ggplot(df_combined_all, aes(x = feature, y = mean_norm_value, fill = interaction(dataset, visual_feat))) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.82), width = 0.625, alpha = 1.) +
+  geom_errorbar(
+    aes(ymin = mean_norm_value - se_, # sd_norm_value SD across cats or sd_ if corpus level
+        ymax = mean_norm_value + se_),
+    width = 0.2,                           # horizontal width of error bars
+    position = position_dodge(width = 0.82), # matches bar dodging
+    alpha = 1
+  ) +
+  facet_wrap(~ visual_feat, nrow = 1) +
+  theme_minimal() +
+  # labs(y = "Normalized value", x = NULL) +
+  labs(y = "Absolute value", x = NULL) +
+  scale_fill_manual(values = my_colors) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size = 28, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 24),
+    axis.title.y = element_text(size = 24),
+    axis.text.x  = element_blank(),
+    axis.text.y  = element_text(size = 26),
+    legend.title = element_text(size = 16),
+    legend.text  = element_text(size = 14),
+    strip.text   = element_blank(),
+    panel.spacing.x = unit(-2, "lines"),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey92"),
+    panel.grid.minor.y = element_line(color = "grey95")
+) + 
+  # scale_y_continuous(limits = c(0, 1.05),breaks = seq(0, 1.0, 0.25) )
+  scale_y_continuous(limits = c(0, 16),breaks = seq(0, 15, 5) )
+  ggsave("infant_graphs_all_feats_abs_final.svg", plot = p, width = 22, height = 5, dpi=300, device = "svg")
+print(p)
+```
+
+```{r}
+
+```
+

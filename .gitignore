@@ -1,0 +1,44 @@
+*.pdf
+.DS_Store
+.vscode/
+acceptable_images/
+acceptable_images-2/
+private_images_with_faces/
+ckpt/
+debug/
+march26/
+subs/
+__pycache__/
+*.pth
+*.npy
+shapenet_sim_data.csv
+shapenet_sim_data_new.csv
+shapenet_sim_data_newGIST.csv
+revision/
+perception_models/
+*.svg
+
+Fig2/data/PanelA/RGB_hist/NULL_all2all_corr_shuffled_audit.csv
+Fig2/data/PanelA/RGB_hist/NULL_all2all_corr_shuffled.csv
+
+Fig2/data/PanelA/RGB_hist/NULL_all2all_corr_shuffled_chunkedK1_audit.csv
+Fig2/data/PanelA/RGB_hist/NULL_all2all_corr_shuffled_chunkedK1.csv
+
+Fig2/data/PanelA/RGB_hist/NULL_all2all_corr_shuffled_chunkedK3_audit.csv
+Fig2/data/PanelA/RGB_hist/NULL_all2all_corr_shuffled_chunkedK3.csv
+
+Fig2/data/PanelA/RGB_hist/NULL_all2all_corr_shuffled_chunkedK6_audit.csv
+Fig2/data/PanelA/RGB_hist/NULL_all2all_corr_shuffled_chunkedK6.csv
+
+Fig2/data/PanelA/RGB_hist/NULL_all2all_corr_shuffled_chunkedK9_audit.csv
+Fig2/data/PanelA/RGB_hist/NULL_all2all_corr_shuffled_chunkedK9.csv
+
+# Fig2/data/PanelA/RGB_hist/NULL_forRplots_shuffled_chunkedK1*
+# Fig2/data/PanelA/RGB_hist/NULL_forRplots_shuffled_chunkedK3*
+# Fig2/data/PanelA/RGB_hist/NULL_forRplots_shuffled_chunkedK9*
+
+# *withPE.csv
+# *withClip.csv
+# *withGIST_cosSim.csv
+
+osf_sync.py

@@ -1,0 +1,171 @@
+---
+title: "graphs"
+output: pdf_document
+date: "2025-09-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# read infant and null full graph stats
+# Observed infant data
+df_infant <- read.csv("../Fig2/data/PanelC/RGB_graphs/graphs_infant_RGB_10pct.csv", na.strings = c("", "NA"))
+# Space-only null; (analogous to K=1)
+df_S_null <- read.csv("../Fig2/data/PanelC/RGB_graphs/chunkedK1_label_shuffling_graphs_null_RGB_10pct.csv", na.strings = c("", "NA"))
+# Space-Time null; K=3
+df_ST_null_K3 <- read.csv("../Fig2/data/PanelC/RGB_graphs/chunkedK3_label_shuffling_graphs_null_RGB_10pct.csv", na.strings = c("", "NA"))
+# Space-Time null; K=6
+df_ST_null_K6 <- read.csv("../Fig2/data/PanelC/RGB_graphs/chunkedK6_label_shuffling_graphs_null_RGB_10pct.csv", na.strings = c("", "NA"))
+# Space-Time null; K=9
+df_ST_null_K9 <- read.csv("../Fig2/data/PanelC/RGB_graphs/chunkedK9_label_shuffling_graphs_null_RGB_10pct.csv", na.strings = c("", "NA"))
+
+cols_to_remove <- c("proportion_connected_nodes")
+
+df_infant <- df_infant %>% dplyr::select(-all_of(cols_to_remove))
+df_S_null <- df_S_null %>% dplyr::select(-all_of(cols_to_remove))
+df_ST_null_K3 <- df_ST_null_K3 %>% dplyr::select(-all_of(cols_to_remove))
+df_ST_null_K6 <- df_ST_null_K6 %>% dplyr::select(-all_of(cols_to_remove))
+df_ST_null_K9 <- df_ST_null_K9 %>% dplyr::select(-all_of(cols_to_remove))
+```
+
+```{r}
+sort_and_filter_complete <- function(...) {
+  dfs <- list(...)
+  dfs <- lapply(dfs, function(df) df[order(df$subj, df$category), , drop = FALSE])
+  keys <- lapply(dfs, function(df) paste(df$subj, df$category, sep = "\r"))
+  stopifnot(all(vapply(dfs[-1], function(df) {
+    identical(keys[[1]], paste(df$subj, df$category, sep = "\r"))
+  }, logical(1))))
+  keep <- Reduce(`&`, lapply(dfs, complete.cases))
+  lapply(dfs, function(df) df[keep, , drop = FALSE])
+}
+
+dfs_all <- sort_and_filter_complete(df_infant, df_S_null, df_ST_null_K3, df_ST_null_K6, df_ST_null_K9)
+df_infant <- dfs_all[[1]]
+df_S_null <- dfs_all[[2]]
+df_ST_null_K3 <- dfs_all[[3]]
+df_ST_null_K6 <- dfs_all[[4]]
+df_ST_null_K9 <- dfs_all[[5]]
+
+df_infant$dataset <- "Infant"
+df_S_null$dataset <- "K1"
+df_ST_null_K3$dataset <- "K3"
+df_ST_null_K6$dataset <- "K6"
+df_ST_null_K9$dataset <- "K9"
+
+df_all <- rbind(df_infant, df_S_null, df_ST_null_K3, df_ST_null_K6, df_ST_null_K9)
+df_all$dataset <- factor(df_all$dataset, levels = c("K1", "K3", "K6", "K9", "Infant"))
+```
+
+# normalize to shared scale for visualization
+```{r}
+features_to_plot <- c("avg_degree") # options: "avg_degree" or "overall_avg_connectivity"
+OUT_NAME <- ifelse("avg_degree" %in% features_to_plot, "degree", "connectivity")
+
+name_map <- c(
+  "avg_degree" = "Avg Degree",
+  "overall_avg_connectivity" = "Connectivity"
+)
+
+# do infant and null full graphs
+# gather features into long form
+df_long_all <- df_all %>%
+  pivot_longer(
+    cols = -c(subj, category, dataset), # keep subj, category, dataset, melt the rest
+    names_to = "feature",
+    values_to = "value"
+  ) %>%
+  filter(feature %in% features_to_plot)
+
+# sum/mean across subjects per dataset × category × feature
+df_sum_all <- df_long_all %>%
+  group_by(category, dataset, feature) %>%
+  summarise(total_value = mean(value, na.rm = TRUE), .groups = "drop")
+
+# normalize within each feature × category
+df_norm_all <- df_sum_all %>%
+  group_by(category, feature) %>%
+  # mutate(norm_value = total_value / max(total_value)) %>%
+  mutate(norm_value = total_value) %>%
+  ungroup() %>%
+  mutate(feature = dplyr::recode(feature, 
+  "avg_degree" = "Avg Degree",
+  "overall_avg_connectivity" = "Connectivity"
+))
+
+df_sd_all <- df_long_all %>%
+  group_by(subj, category, feature) %>%
+  # mutate(norm_value = value / max(value)) %>%
+  mutate(norm_value = value) %>%
+  ungroup() %>%
+  group_by(dataset, feature) %>%
+  summarize(sd_ = sd(norm_value), se_ = sd(norm_value) / sqrt(length(norm_value))) %>%
+  mutate(feature = dplyr::recode(feature, 
+  "avg_degree" = "Avg Degree",
+  "overall_avg_connectivity" = "Connectivity"
+))
+
+df_avg_norm_all <- df_norm_all %>%
+  group_by(dataset, feature) %>%
+  summarise(mean_norm_value = mean(norm_value, na.rm = TRUE), sd_norm_value = sd(norm_value, na.rm = TRUE), .groups = "drop")
+
+df_combined_all <- merge(df_avg_norm_all, df_sd_all, by = c("dataset", "feature"))
+
+######################################
+```
+
+```{r}
+df_combined_all$dataset <- factor(df_combined_all$dataset, levels = c("K1", "K3", "K6", "K9", "Infant"))
+```
+
+## plot
+```{r}
+library(RColorBrewer)
+p <- ggplot(df_combined_all, aes(x = feature, y = mean_norm_value, fill = dataset)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.82), width = 0.625, alpha = 1.) +
+  geom_errorbar(
+    aes(ymin = mean_norm_value - se_, # sd_norm_value SD across cats or sd_ if corpus level
+        ymax = mean_norm_value + se_),
+    width = 0.2,                           # horizontal width of error bars
+    position = position_dodge(width = 0.82) # matches bar dodging
+  ) +
+  theme_minimal() +
+  labs(y = NULL, x = NULL, fill = "Distribution") +
+  scale_fill_manual(values = c(
+    "Infant" = "#e5b9d6",
+    "K1" = "grey50",
+    "K3" = "grey60",
+    "K6" = "grey72",
+    "K9" = "grey85"
+      ) 
+    ) +
+  theme(
+    legend.position = "none",
+    axis.title.x = element_text(size = 28),
+    axis.title.y = element_text(size = 28),
+    axis.text.x  = element_text(size = 24),
+    axis.text.y  = element_text(size = 32),
+    legend.title = element_text(size = 16),
+    legend.text  = element_text(size = 14),
+    strip.text   = element_text(size = 16),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey92"),
+    panel.grid.minor.y = element_line(color = "grey95")
+) + 
+  # scale_y_continuous(limits = c(0, 1.05),breaks = seq(0, 1.0, 0.25) )
+  scale_y_continuous(limits = c(0, 15.), breaks = seq(0, 25, 5) ) # if using absolute values
+ggsave(paste0(OUT_NAME, "_FigS4_abs_final.svg"), plot = p, width = 9, height = 8, dpi=300, device = "svg")
+
+print(p)
+```
+
+```{r}
+
+```
