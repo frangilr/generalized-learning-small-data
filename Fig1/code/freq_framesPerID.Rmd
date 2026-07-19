@@ -1,0 +1,365 @@
+---
+title: "Frames per object ID"
+output: pdf_document
+date: "2025-07-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#### general set up ####
+rm(list=ls()) # clear environment
+options(scipen = 999)
+options(digits = 10)
+set.seed(1214)
+#RNGkind(sample.kind = "default")
+
+safe_colorblind_palette <- c("#88CCEE", "#CC6677", "#DDCC77", "#117733", "#332288", "#AA4499", 
+                             "#44AA99", "#999933", "#882255", "#661100", "#6699CC", "#888888")
+
+library(ggplot2)
+library(gridExtra)
+library(reshape2)
+library(forcats)
+library(ggpubr)
+library(dplyr)
+library(ggExtra)
+library(ggforce)
+library(tidyverse)
+library(stringr)
+library(data.table)
+library(MonoPoly)
+library(ggalt)
+library(dgof)
+library(extraDistr)
+library(Matching)
+library(boot)
+library(gt)
+library(wesanderson)
+
+subjs = c("030FD", "031HW", "032SR", "033SE", "036MR", "037SM", "038RB", "039ED", "041EC",
+          "042MB", "043MP", "045NA", "046TE", "047MS")
+
+#### chosen cats for analysis ####
+chosen_cats = c("bottle", "bowl", "chair", "cup", 
+                "door", "spoon", "table", "window")
+
+#### custom theme ####
+my_theme <- function() {
+  theme(
+    legend.position = "none",  # Adjust X and Y as needed
+    axis.title.x = element_text(size = 22),
+    axis.title.y = element_text(size = 22),
+    axis.text.x  = element_text(size = 22),
+    axis.text.y  = element_text(size = 22),
+    legend.title = element_text(size = 20),
+    legend.text  = element_text(size = 18),
+    strip.text   = element_text(size = 20),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey92"),
+    panel.grid.minor.y = element_line(color = "grey95")
+    )
+}
+```
+
+
+```{r}
+# set working directory
+# setwd("~/")
+# wd = getwd()
+
+setwd(paste0("../data/"))
+
+#### read in data and find first ranked items by subj/obj ####
+### read in data into list ###
+origdata <- vector('list')
+subdata <- vector('list')
+rankdata <- vector('list')
+
+for(o in 1:length(chosen_cats)){
+  obj = chosen_cats[o]
+  
+  infile = paste0(obj,"_multisubjs_longdata.csv")
+  data_file = read.csv(infile, stringsAsFactors = FALSE)
+  data_file$obj_id = as.factor(data_file$obj_id)
+  
+  colnames(data_file) = c("frame_id","MT","subj","obj","obj_num","obj_pos","obj_id")
+  
+  ## get only the rows that have object ids in them, so remove the 4+ and x and exclude any unused position rows
+  sub_file = data_file %>% 
+    filter(obj_num < 4 | obj_num != "x") %>% 
+    droplevels(exclude = "") %>% 
+    na.omit()
+  
+  ## find the frequency rank of the ids for each subject
+  # first summarize the number of frames each id (for each subj) was in
+  # then reorder by obj id frequency (within subjs)
+  # then get rank using row_number()
+  id_freqs = sub_file %>% 
+    group_by(subj, obj_id) %>% 
+    summarise(n = n()) %>% 
+    ungroup() %>% 
+    group_by(subj) %>% 
+    arrange(subj, desc(n)) %>% 
+    mutate(rank = row_number())
+  
+  origdata[[o]] = data_file
+  subdata[[o]] = sub_file
+  rankdata[[o]] = id_freqs
+}
+
+names(origdata) = chosen_cats
+names(subdata) = chosen_cats
+names(rankdata) = chosen_cats
+```
+
+```{r}
+# real dist
+#### instances per most freq object ####
+#### instances per all Ids ####
+frames_perall = data.frame()
+
+# here just collecting across all cats
+for(o in 1:length(chosen_cats)){
+  obj_data = rankdata[[o]]
+  frames_perall = bind_rows(frames_perall, 
+                            bind_cols(obj = rep(chosen_cats[o], times = nrow(obj_data)), obj_data))
+}
+```
+
+
+## sorting by alphabetical order
+```{r}
+frames_perall = frames_perall %>% arrange(obj)
+```
+
+### main plot
+```{r}
+#### plot frames by id rank #### used for null comparison (this is exact)
+frames_byrank = frames_perall %>% 
+  group_by(rank) %>% 
+  summarise(num_frames = sum(n)) %>% 
+  mutate(prop_frames = num_frames/sum(num_frames))
+```
+
+## by obj
+```{r}
+frames_byrank_byobj = frames_perall %>% 
+  group_by(obj, rank) %>% 
+  summarise(num_frames = sum(n)) %>% 
+  ungroup() %>% 
+  group_by(obj) %>% 
+  mutate(total_frames = sum(num_frames)) %>% 
+  mutate(prop_frames = num_frames/total_frames)
+```
+
+## avg across obj; used for figure
+```{r}
+frames_byrank_avg = frames_byrank_byobj %>%
+   group_by(rank) %>%
+   summarise(avg_prop = mean(prop_frames), sd_prop = sd(prop_frames))
+```
+
+## read in null
+```{r}
+setwd("~/")
+wd = getwd()
+setwd(paste0(wd,"/Downloads/STS_release_Dec09/Fig1/data/"))
+
+df_null = read.csv("null_freq_by_rank_allobjs_500seeds_Nov07.csv")
+```
+
+## extend red line just for viz purposes
+```{r}
+df_null_ext <- df_null |>
+  arrange(rank) |>
+  rbind(
+    data.frame(rank = min(df_null$rank) - 0.45, 
+               num_frames = 0,
+               prop_frames = df_null$prop_frames[df_null$rank == min(df_null$rank)]),
+    data.frame(rank = max(df_null$rank) + 0.45, 
+               num_frames = 0,
+               prop_frames = df_null$prop_frames[df_null$rank == max(df_null$rank)])
+  )
+```
+
+## plot
+```{r}
+frames_perID_plot = ggplot() +
+  geom_col(data = frames_byrank_avg, aes(x = rank, y = avg_prop), fill = "lightgray") +
+  geom_jitter( inherit.aes = FALSE, data = frames_byrank_byobj, 
+               aes(x = rank, y = prop_frames, color = obj),
+               width = .3, height = 0, size = 2.5) +
+  # # use raw curve
+  # geom_line(
+  #   data = df_null,
+  #   aes(x = rank, y = prop_frames),
+  #   color = "red",
+  #   linewidth = 0.65,
+  #   lineend = "round"
+  # ) +
+  
+  # # use smoothed line for viz
+  geom_smooth(
+    data = df_null_ext,
+    aes(x = rank, y = prop_frames),
+    color = "red",
+    se = FALSE,
+    method = "loess",
+    span = 0.5,
+    linewidth = 0.65
+  ) +
+  labs(title = NULL,
+       y = NULL, x = NULL) +
+  guides(color = guide_legend(title="Objects")) +
+  scale_y_continuous(limits = c(0,1)) +
+  scale_x_continuous(breaks = seq(from = 1, to = 24, by = 1), limits = c(.5, 24.5)) +
+  scale_color_manual(values = safe_colorblind_palette[c(1:8)], drop = FALSE) +
+  theme_minimal() +
+  my_theme()
+
+# ggsave("../frames_perID_allobjs_avg.svg", plot = frames_perID_plot, width = 11, height = 7, dpi=300, device = "svg")
+frames_perID_plot
+# dev.off()
+```
+
+## generate null and plot it 
+```{r}
+# NULL dist
+seed_list <- data.frame()
+
+# for (i in 0:499) { # uncomment for 500 seeds
+for (i in 0:0) { # only this one used for ks test since the proportions are almost identical so more interested in fixing counts
+set.seed(i)
+results_list <- list()
+
+for (o in 1:length(chosen_cats)) {
+  cat_name <- chosen_cats[o]
+  cat_sample_count <- data.frame()
+  for (s in 1:length(subjs)) {
+    subj_name <- subjs[s]
+    totall <- (rankdata[[cat_name]] %>% filter(subj == subj_name))
+
+    sample_size <- sum(as.numeric(totall$n), na.rm = TRUE)
+
+    unique_id <- (subdata[[cat_name]] %>% filter(subj == subj_name)) %>% distinct(obj_id, .keep_all = FALSE)
+    
+    # just making sure the ids from both csv files are the same
+    if ( sum(sort(as.vector(unique_id$obj_id)) == sort(as.vector((totall %>% distinct(obj_id, .keep_all = FALSE))$obj_id)) ) != length(as.vector(unique_id$obj_id)) ) {
+        stopp
+    }
+    
+    samples <- sample(as.vector(unique_id$obj_id), sample_size, replace = TRUE)
+
+    # Create frequency table with rank 
+    
+    # (original version)
+    count_df0 <- tibble(
+        obj_id = samples,
+        subj = subj_name,
+        category = cat_name
+      ) 
+    
+    count_df = count_df0 %>%
+        group_by(subj, obj_id) %>%
+        summarise(n = n(), .groups = "drop") %>%
+        group_by(subj) %>%
+        arrange(desc(n)) %>%
+        mutate(rank = row_number()) %>%
+        ungroup()
+    
+    count_df$obj_id <- factor(count_df$obj_id, levels = levels(unique_id$obj_id))
+    cat_sample_count <- rbind(cat_sample_count, count_df)
+  }
+  
+  results_list[[cat_name]] <- cat_sample_count
+
+}
+frames_perall_null = data.frame()
+for(o in 1:length(chosen_cats)){
+  cat_name <- chosen_cats[o]
+  obj_data_null = results_list[[cat_name]]
+  frames_perall_null = bind_rows(frames_perall_null, 
+                            bind_cols(obj = rep(cat_name, times = nrow(obj_data_null)), obj_data_null, seed = rep(i, times = nrow(obj_data_null)), source = rep("Null", times= nrow(obj_data_null))))
+}
+frames_perall_null = frames_perall_null %>% arrange(obj)
+seed_list <- bind_rows(seed_list, frames_perall_null)
+}
+```
+
+## aggregate across all seeds
+```{r}
+across_seeds = seed_list %>% group_by(obj, rank) %>% summarise(num_frames = sum(n)) %>% ungroup() 
+```
+
+## by obj
+```{r}
+across_seeds_prop = across_seeds %>% group_by(obj) %>% mutate(prop_frames = num_frames / sum(num_frames))
+```
+
+## by rank
+```{r}
+across_seeds_allobjs = seed_list %>% group_by(rank) %>% summarise(num_frames = sum(n)) %>% mutate(prop_frames = num_frames / sum(num_frames)) # used for red line above
+```
+
+## tag as null
+```{r}
+across_seeds_prop_null <- bind_cols(across_seeds_prop, source = rep("Null", times = nrow(across_seeds_prop)))
+across_seeds_prop_allobjs_null <- bind_cols(across_seeds_allobjs, source = rep("Null", times = nrow(across_seeds_allobjs)))
+```
+
+## combine real and null all categories
+```{r}
+frames_byrank_combined = frames_byrank %>% mutate(source = "Infant")
+frames_all <- bind_rows(frames_byrank_combined, across_seeds_prop_allobjs_null)
+```
+
+## plot overlay
+```{r}
+my_theme <- function() {
+  theme(
+    legend.position = "none",  # Adjust X and Y as needed
+    axis.title.x = element_text(size = 22),
+    axis.title.y = element_text(size = 22),
+    axis.text.x  = element_text(size = 22),
+    axis.text.y  = element_text(size = 22),
+    legend.title = element_text(size = 20),
+    legend.text  = element_text(size = 18),
+    strip.text   = element_text(size = 20),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey92"),
+    panel.grid.minor.y = element_line(color = "grey95")
+    )
+}
+
+library(RColorBrewer)
+frames_all$source <- factor(
+  frames_all$source,
+  levels = c("Infant", "Null")
+)
+frames_comparison_plot <- ggplot(frames_all, aes(x = rank, y = prop_frames, fill = source)) +
+  geom_col(position = "identity", alpha = 0.5) +
+  scale_fill_manual(values = c("Infant" = brewer.pal(8, "Set2")[4],
+                               "Null" = "grey65"
+                               )) +
+  labs(title = NULL,
+       x = NULL,
+       y = NULL,
+       fill = "Distribution") +
+  scale_x_continuous(breaks = seq(1, 24, 1), limits = c(0.5, 24.5)) +
+  scale_y_continuous(limits = c(0, 1)) +
+  theme_minimal() +
+  my_theme()
+
+# ggsave("../frames_perID_allobjs_null_and_original_500samples.svg", plot = frames_comparison_plot, width = 10, height = 7, dpi=300, device = "svg")
+frames_comparison_plot
+# dev.off()
+```
+
+```{r}
+
+```

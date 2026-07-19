@@ -1,0 +1,104 @@
+---
+title: "barplot_analysis"
+output: pdf_document
+date: "2025-07-21"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+############ ShapeNet ############
+df0 <- read.csv("../data/shapenet/graph_array_05pct_RGB_hist.csv",stringsAsFactors=FALSE,header=TRUE, sep=",")
+df1 <- read.csv("../data/shapenet/graph_array_05pct_GIST_cosSim.csv",stringsAsFactors=FALSE,header=TRUE, sep=",")
+df2 <- read.csv("../data/shapenet/graph_array_05pct_PE-Spatial.csv",stringsAsFactors=FALSE,header=TRUE, sep=",")
+df3 <- read.csv("../data/shapenet/graph_array_05pct_Clip.csv",stringsAsFactors=FALSE,header=TRUE, sep=",")
+
+############ PetFace ############
+# df0 <- read.csv("../data/petface/RGB_hist/petface_RGB_graph_array_05pct.csv",stringsAsFactors=FALSE,header=TRUE, sep=",")
+# df1 <- read.csv("../data/petface/GIST/petface_GIST_cosSim_graph_array_05pct.csv",stringsAsFactors=FALSE,header=TRUE, sep=",")
+# df2 <- read.csv("../data/petface/PE-Spatial-L/petface_PE-Spatial-L_graph_array_05pct.csv",stringsAsFactors=FALSE,header=TRUE, sep=",")
+# df3 <- read.csv("../data/petface/Clip/petface_Clip_graph_array_05pct.csv",stringsAsFactors=FALSE,header=TRUE, sep=",")
+
+df0$visual_feat = "RGB_hist"
+df1$visual_feat = "GIST"
+df2$visual_feat = "PE-Spatial"
+df3$visual_feat = "CLIP"
+
+df_all <- rbind(df0, df1, df2, df3)
+df_all$dataset_agg <- factor(df_all$dataset_agg, levels = c("nonLumpy", "lumpy"))
+df_all$visual_feat <- factor(df_all$visual_feat, levels = c("RGB_hist", "GIST", "PE-Spatial", "CLIP"))
+```
+
+```{r}
+print(
+  df_all %>% filter(visual_feat == "CLIP") %>% group_by(dataset_agg, visual_feat) %>% mutate(prop_disc = 1 - proportion_connected_nodes) %>% summarise(m = mean(prop_disc), s = sd(prop_disc))
+)
+```
+
+```{r}
+features_to_plot <- c("avg_degree", "avg_connectivity") # options: avg_degree or avg_connectivity
+
+# melt features into long format
+df_long <- df_all %>%
+  pivot_longer(
+    cols = -c(visual_feat, category, dataset_agg),
+    names_to = "feature",
+    values_to = "value"
+  ) %>%
+  filter(feature %in% features_to_plot)
+
+# sum / mean
+df_sum <- df_long %>%
+  group_by(visual_feat, category, dataset_agg, feature) %>%
+  summarise(total_value = mean(value, na.rm = TRUE), .groups = "drop")
+
+# normalize within each feature × category
+df_norm <- df_sum %>%
+  group_by(visual_feat, category, feature) %>%
+  # mutate(norm_value = total_value / max(total_value)) %>%
+  mutate(norm_value = total_value) %>%
+  ungroup() 
+  
+df_sd <- df_long %>%
+  group_by(visual_feat, category, feature) %>%
+  # mutate(norm_value = value / max(value)) %>%
+  mutate(norm_value = value) %>%
+  ungroup() %>%
+  group_by(visual_feat, dataset_agg, feature) %>%
+  summarize(sd_ = sd(norm_value), se_ = sd(norm_value) / sqrt(length(norm_value))) 
+```
+
+```{r}
+library(RColorBrewer)
+# average across categories after normalization
+feature_labels <- c(
+  "avg_degree" = "Degree",
+  "avg_connectivity" = "Connectivity"
+)
+df_avg_norm <- df_norm %>%
+  group_by(visual_feat, dataset_agg, feature) %>%
+  summarise(m_norm = mean(norm_value, na.rm = TRUE), sd_norm_value = sd(norm_value, na.rm = TRUE), se_norm_value = sd(norm_value, na.rm = TRUE) / sqrt(length(norm_value)), .groups = "drop")
+
+df_combined <- merge(df_avg_norm, df_sd, by = c("visual_feat", "dataset_agg", "feature"))
+
+df_combined$feature = factor(
+  df_combined$feature,
+  levels = c("avg_degree", "avg_connectivity")
+)
+```
+
+## print for table only
+```{r}
+print(df_combined %>% filter((feature %in% c("avg_connectivity")) & (dataset_agg %in% c("lumpy"))))
+```
+
+```{r}
+
+```
+

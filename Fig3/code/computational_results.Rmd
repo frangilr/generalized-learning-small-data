@@ -1,0 +1,275 @@
+---
+title: "model_acc_plot"
+output: pdf_document
+date: "2026-03-27"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+## Model ablations on ShapeNet
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(RColorBrewer)
+
+########### ResNet50 ###########
+unif_r50 = c(55.33333333,57.58333333,61.19444444,58.69444444,57.33333333,51.16666667,58.58333333,58.27777778)
+inf_r50 = c(61.27777778,62.52777778,62.97222222,67.44444444,60.22222222,63.63888889,59.44444444,58.55555556)
+
+model_r50 = rep(c("ResNet50"), 16)
+
+stopifnot(length(unif_r50) == length(inf_r50))
+stopifnot(length(unif_r50) + length(inf_r50) == 16)
+
+########### ResNet18 ###########
+unif_r18 = c(60.22222222222222, 58.55555555555556,59.666666666666664, 60.0, 57.388888888888886, 56.77777777777778, 57.52777777777778, 61.94444444444444)
+inf_r18 = c(65.5, 61.833333333333336, 65.27777777777777, 63.5, 62.888888888888886, 58.833333333333336, 66.30555555555556, 62.166666666666664)
+
+model_r18 = rep(c("ResNet18"), 16)
+
+stopifnot(length(unif_r18) == length(inf_r18))
+stopifnot(length(unif_r18) + length(inf_r18) == 16)
+
+########### ViT-T ###########
+unif_vit = c(55.27777777777778, 53.47222222222222, 52.138888888888886)
+inf_vit = c(56.44444444444444, 56.138888888888886, 57.19444444444444)
+
+model_vit = rep(c("ViT-Tiny"), 6)
+
+stopifnot(length(unif_vit) == length(inf_vit))
+stopifnot(length(unif_vit) + length(inf_vit) == 6)
+
+########### Lumpyness ###########
+nonlumpy_r50 = rep(c("Non-Lumpy"), 8)
+lumpy_r50 = rep(c("Lumpy"), 8)
+
+nonlumpy_r18 = rep(c("Non-Lumpy"), 8)
+lumpy_r18 = rep(c("Lumpy"), 8)
+
+nonlumpy_vit = rep(c("Non-Lumpy"), 3)
+lumpy_vit = rep(c("Lumpy"), 3)
+
+
+########### DataFrame ###########
+df_shapenet = data.frame(
+  accuracy=c(unif_r50, inf_r50, unif_r18, inf_r18, unif_vit, inf_vit),
+  dataset=c(model_r50, model_r18, model_vit),
+  lumpyness=c(nonlumpy_r50, lumpy_r50, nonlumpy_r18, lumpy_r18, nonlumpy_vit, lumpy_vit)
+)
+
+df_shapenet$dataset <- factor(df_shapenet$dataset, levels = c("ResNet50", "ResNet18", "ViT-Tiny"))
+df_shapenet$lumpyness <- factor(df_shapenet$lumpyness, levels = c("Non-Lumpy", "Lumpy"))
+
+df_shapenet <- df_shapenet %>% group_by(dataset, lumpyness) %>% mutate(se = sd(accuracy) / sqrt(length(accuracy)), m = mean(accuracy)) %>% ungroup()
+
+########### Plot ###########
+
+full_palette <- brewer.pal(12, "Paired")
+# my_colors <- c(full_palette[1:2], full_palette[9:10], full_palette[5:6])
+colorr <- full_palette[9] #brewer.pal(8, "GnBu")[4]
+my_colors <- c("grey80", colorr, "grey80", colorr, "grey80", colorr)
+
+p <- ggplot(df_shapenet, aes(x = dataset, y = m, fill = interaction(lumpyness, dataset))) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.77), width = 0.625, alpha = 1.) +
+  geom_errorbar(
+    aes(ymin = m - se, ymax = m + se),
+    position = position_dodge(width = 0.77),
+    width = 0.2,
+    linewidth = 0.3,
+    alpha = 1.
+  ) +
+  geom_text(
+    aes(label = round(m, 1), group = interaction(dataset, lumpyness)),
+    position = position_dodge(width = 0.77),
+    vjust = -1.2,
+    size = 10,
+    fontface = "plain"
+  ) +
+  stat_summary(
+    aes(y = accuracy), 
+    fun = median, 
+    geom = "point", 
+    shape = 8, 
+    size = 6, 
+    position = position_dodge(width = 0.77),
+    show.legend = FALSE
+  ) +
+  theme_minimal() +
+  labs(y = "Accuracy", x = NULL) +
+  scale_fill_manual(values = my_colors) +
+  theme(
+    legend.position = "none",
+    # plot.title = element_text(size = 28, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 24),
+    axis.title.y = element_text(size = 24),
+    axis.text.x  = element_blank(),
+    axis.text.y  = element_text(size = 34),
+    legend.title = element_text(size = 16),
+    legend.text  = element_text(size = 14),
+    strip.text   = element_blank(),
+    # panel.spacing.x = unit(-2, "lines"),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey92"),
+    panel.grid.minor.y = element_line(color = "grey95")
+) + 
+  scale_y_continuous(breaks = seq(45, 75, 5), labels = prettyNum) +
+  coord_cartesian(ylim = c(45, 75))
+
+# ggsave("shapenet_model_results.svg", plot = p, width = 9, height = 7, dpi=600, device = "svg")
+print(p)
+```
+
+
+```{r}
+
+## Model ablations on PetFace
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(RColorBrewer)
+
+########### ResNet50 ###########
+unif_r50 = c(51.06666666666667, 50.333333333333336, 51.333333333333336, 52.666666666666664, 52.733333333333334, 52.93333333333333)
+inf_r50 = c(53.666666666666664, 56.86666666666667, 53.266666666666666, 54.13333333333333, 56.266666666666666, 55.53333333333333)
+
+model_r50 = rep(c("ResNet50"), 12)
+
+stopifnot(length(unif_r50) == length(inf_r50))
+stopifnot(length(unif_r50) + length(inf_r50) == 12)
+
+########### ResNet18 ###########
+unif_r18 = c(64.46666666666667, 64.4, 63.86666666666667)
+inf_r18 = c(67.73333333333333, 66.93333333333334, 65.0)
+
+model_r18 = rep(c("ResNet18"), 6)
+
+stopifnot(length(unif_r18) == length(inf_r18))
+stopifnot(length(unif_r18) + length(inf_r18) == 6)
+
+########### ViT-T ###########
+unif_vit = c(69.8, 66.53333333333333, 67.0)
+inf_vit = c(73.4, 71.06666666666666, 70.86666666666666)
+
+model_vit = rep(c("ViT-Tiny"), 6)
+
+stopifnot(length(unif_vit) == length(inf_vit))
+stopifnot(length(unif_vit) + length(inf_vit) == 6)
+
+########### Lumpyness ###########
+nonlumpy_r50 = rep(c("Non-Lumpy"), 6)
+lumpy_r50 = rep(c("Lumpy"), 6)
+
+nonlumpy_r18 = rep(c("Non-Lumpy"), 3)
+lumpy_r18 = rep(c("Lumpy"), 3)
+
+nonlumpy_vit = rep(c("Non-Lumpy"), 3)
+lumpy_vit = rep(c("Lumpy"), 3)
+
+
+########### DataFrame ###########
+df_petface = data.frame(
+  accuracy=c(unif_r50, inf_r50, unif_r18, inf_r18, unif_vit, inf_vit),
+  dataset=c(model_r50, model_r18, model_vit),
+  lumpyness=c(nonlumpy_r50, lumpy_r50, nonlumpy_r18, lumpy_r18, nonlumpy_vit, lumpy_vit)
+)
+
+df_petface$dataset <- factor(df_petface$dataset, levels = c("ResNet50", "ResNet18", "ViT-Tiny"))
+df_petface$lumpyness <- factor(df_petface$lumpyness, levels = c("Non-Lumpy", "Lumpy"))
+
+df_petface <- df_petface %>% group_by(dataset, lumpyness) %>% mutate(se = sd(accuracy) / sqrt(length(accuracy)), m = mean(accuracy)) %>% ungroup()
+
+########### Plot ###########
+
+full_palette <- brewer.pal(12, "Paired")
+# my_colors <- c(full_palette[1:2], full_palette[9:10], full_palette[5:6])
+colorr <- full_palette[9] #brewer.pal(8, "GnBu")[4]
+my_colors <- c("grey80", colorr, "grey80", colorr, "grey80", colorr)
+
+p <- ggplot(df_petface, aes(x = dataset, y = m, fill = interaction(lumpyness, dataset))) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.75), width = 0.625, alpha = 1.) +
+  geom_errorbar(
+    aes(ymin = m - se, ymax = m + se),
+    position = position_dodge(width = 0.77),
+    width = 0.2,
+    linewidth = 0.3,
+    alpha = 1.
+  ) +
+  geom_text(
+    aes(label = round(m, 1), group = interaction(dataset, lumpyness)),
+    position = position_dodge(width = 0.77),
+    vjust = -1.2,
+    size = 10,
+    fontface = "plain"
+  ) +
+  stat_summary(
+    aes(y = accuracy), 
+    fun = median, 
+    geom = "point", 
+    shape = 8, 
+    size = 6, 
+    position = position_dodge(width = 0.77),
+    show.legend = FALSE
+  ) +
+  theme_minimal() +
+  labs(y = "Accuracy", x = NULL) +
+  scale_fill_manual(values = my_colors) +
+  theme(
+    legend.position = "none",
+    # plot.title = element_text(size = 28, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 24),
+    axis.title.y = element_text(size = 24),
+    axis.text.x  = element_blank(),
+    axis.text.y  = element_text(size = 34),
+    legend.title = element_text(size = 16),
+    legend.text  = element_text(size = 14),
+    strip.text   = element_blank(),
+    # panel.spacing.x = unit(-2, "lines"),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey92"),
+    panel.grid.minor.y = element_line(color = "grey95")
+) + 
+  scale_y_continuous(breaks = seq(45, 75, 5), labels = prettyNum) +
+  coord_cartesian(ylim = c(45, 75))
+
+# ggsave("petface_model_results.svg", plot = p, width = 9, height = 7, dpi=300, device = "svg")
+print(p)
+```
+
+```{r}
+library(lmerTest)
+library(dplyr)
+
+df_shapenet$source_dataset <- "ShapeNet"
+df_petface$source_dataset <- "PetFace"
+
+df_combined <- bind_rows(df_shapenet, df_petface) %>%
+  rename(model_arch = dataset) # rename to avoid confusion
+
+df_combined$lumpyness <- factor(df_combined$lumpyness, levels = c("Non-Lumpy", "Lumpy"))
+# lme_model <- lmer(accuracy ~ lumpyness + (1 | model_arch) + (1 | source_dataset), data = df_combined)
+lme_model <- lmer(accuracy ~ lumpyness + (1 | model_arch:source_dataset), data = df_combined)
+# lme_model <- lmer(accuracy ~ lumpyness + (1 | source_dataset/model_arch), data = df_combined)
+# lme_model <- lm(accuracy ~ lumpyness * model_arch * source_dataset, data = df_combined)
+
+print(summary(lme_model))
+```
+
+```{r}
+# this one is for: lme_model <- lm(accuracy ~ lumpyness * model_arch * source_dataset, data = df_combined)
+print(anova(lme_model))
+```
+
+```{r}
+ci_profile <- confint(lme_model, parm = "lumpynessLumpy")
+
+cat("\n--- 95% Confidence Interval (Profile Likelihood) ---\n")
+print(ci_profile)
+```
+
+

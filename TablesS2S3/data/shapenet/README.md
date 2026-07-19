@@ -1,0 +1,1 @@
+The similarity data for ShapeNet, to appear in `TablesS1S2/data/shapenet/shapenet_sim_data.csv`, is too large for GitHub (>100 Mb). Thus, it will only be available at OSF.
